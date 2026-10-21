@@ -27,11 +27,12 @@ async function loadPdf(source,name="Publication",url=""){
     }
     if(!window.St?.PageFlip)throw new Error("The page-turn engine did not load. Refresh and try again.");
     pageFlip=new window.St.PageFlip(els.bookMount,{width:695,height:900,size:"stretch",minWidth:280,maxWidth:1000,minHeight:370,maxHeight:1450,showCover:true,usePortrait:true,mobileScrollSupport:false,autoSize:true,drawShadow:true,maxShadowOpacity:.62,flippingTime:950,clickEventForward:true,swipeDistance:24,showPageCorners:true,disableFlipByClick:false});
-    pageFlip.loadFromHTML(pages);pageFlip.on("flip",e=>update(e.data+1));update(1);buildThumbs();fitBook();loading(false);
+    pageFlip.loadFromHTML(pages);pageFlip.on("flip",e=>update(e.data+1));pageFlip.on("changeOrientation",()=>setTimeout(()=>centerBook(Number(els.pageInput.value)||1),80));update(1);buildThumbs();fitBook();setTimeout(()=>centerBook(1),80);loading(false);
   }catch(e){error(e.message||"This PDF could not be opened.")}
 }
 
-function update(page){if(!pdfDoc)return;els.pageInput.value=page;els.pageTotal.textContent=`/ ${pdfDoc.numPages}`;els.pageStatus.textContent=`Page ${page} of ${pdfDoc.numPages}`;[els.previousPage,els.dockPrevious,els.firstPage].forEach(b=>b.disabled=page<=1);[els.nextPage,els.dockNext,els.lastPage].forEach(b=>b.disabled=page>=pdfDoc.numPages);document.querySelectorAll(".thumb").forEach(t=>t.classList.toggle("active",Number(t.dataset.page)===page))}
+function update(page){if(!pdfDoc)return;els.pageInput.value=page;els.pageTotal.textContent=`/ ${pdfDoc.numPages}`;els.pageStatus.textContent=`Page ${page} of ${pdfDoc.numPages}`;[els.previousPage,els.dockPrevious,els.firstPage].forEach(b=>b.disabled=page<=1);[els.nextPage,els.dockNext,els.lastPage].forEach(b=>b.disabled=page>=pdfDoc.numPages);document.querySelectorAll(".thumb").forEach(t=>t.classList.toggle("active",Number(t.dataset.page)===page));setTimeout(()=>centerBook(page),40)}
+function centerBook(page){const frame=els.bookMount.querySelector(".stf__parent");if(!frame||!pdfDoc)return;if(matchMedia("(max-width: 780px)").matches){els.bookMount.style.setProperty("--book-offset","0px");return}const quarter=frame.offsetWidth/4;const offset=page===1?-quarter:page===pdfDoc.numPages?quarter:0;els.bookMount.style.setProperty("--book-offset",`${offset}px`)}
 function fitBook(){els.bookMount.style.setProperty("--zoom",zoom)}
 function flipNext(){pageFlip?.flipNext("top")}
 function flipPrev(){pageFlip?.flipPrev("top")}
