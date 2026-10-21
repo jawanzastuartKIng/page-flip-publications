@@ -5,6 +5,10 @@ const pdfjsUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mj
 const workerUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 let pdfDoc=null,pageFlip=null,currentUrl="",objectUrl="",zoom=1,hasBackPadding=false,pageImageUrls=[];
 
+function isTouchDevice(){return navigator.maxTouchPoints>0||matchMedia("(pointer: coarse)").matches||/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)}
+function isMobileLandscape(){return isTouchDevice()&&innerWidth>innerHeight}
+function syncViewportMode(){els.viewerShell.classList.toggle("mobile-landscape",isMobileLandscape());fitBook();if(pdfDoc)setTimeout(()=>centerBook(Number(els.pageInput.value)||1),60)}
+
 document.documentElement.style.setProperty("--accent",config.accent||"#28b6d8");
 els.publicationTitle.textContent=config.title||"My Publication";document.title=config.title||"My Publication";
 function loading(show,text="Opening publication…",progress="Please wait"){els.loading.hidden=!show;els.loadingText.textContent=text;els.loadingProgress.textContent=progress}
@@ -42,8 +46,8 @@ async function loadPdf(source,name="Publication",url=""){
 function update(page){if(!pdfDoc)return;els.pageInput.value=page;els.pageTotal.textContent=`/ ${pdfDoc.numPages}`;els.pageStatus.textContent=`Page ${page} of ${pdfDoc.numPages}`;[els.previousPage,els.dockPrevious,els.firstPage].forEach(b=>b.disabled=page<=1);[els.nextPage,els.dockNext,els.lastPage].forEach(b=>b.disabled=page>=pdfDoc.numPages);document.querySelectorAll(".thumb").forEach(t=>t.classList.toggle("active",Number(t.dataset.page)===page));setTimeout(()=>centerBook(page),40)}
 function pdfToInternal(page){return hasBackPadding&&page===pdfDoc.numPages?page:page-1}
 function internalToPdf(index){if(hasBackPadding&&index===pdfDoc.numPages-1)return pdfDoc.numPages-1;if(hasBackPadding&&index>=pdfDoc.numPages)return pdfDoc.numPages;return Math.min(index+1,pdfDoc.numPages)}
-function centerBook(page){const frame=els.flipbook.querySelector(".stf__parent");if(!frame||!pdfDoc)return;if(Math.min(innerWidth,innerHeight)<=780){els.flipbook.style.transform="translateX(0px)";return}const quarter=frame.offsetWidth/4;const offset=page===1?-quarter:page===pdfDoc.numPages?quarter:0;els.flipbook.style.transform=`translateX(${offset}px)`}
-function fitBook(){els.bookMount.style.setProperty("--zoom",zoom)}
+function centerBook(page){const frame=els.flipbook.querySelector(".stf__parent");if(!frame||!pdfDoc)return;if(isTouchDevice()||Math.min(innerWidth,innerHeight)<=780){els.flipbook.style.transform="translateX(0px)";return}const quarter=frame.offsetWidth/4;const offset=page===1?-quarter:page===pdfDoc.numPages?quarter:0;els.flipbook.style.transform=`translateX(${offset}px)`}
+function fitBook(){els.bookMount.style.setProperty("--zoom",isMobileLandscape()?.78:zoom)}
 function flipNext(){pageFlip?.flipNext("top")}
 function flipPrev(){pageFlip?.flipPrev("top")}
 async function buildThumbs(){for(let n=1;n<=pdfDoc.numPages;n++){const b=document.createElement("button");b.className="thumb";b.dataset.page=n;b.type="button";const c=await renderCanvas(n,170),s=document.createElement("span");s.textContent=n;b.append(c,s);b.onclick=()=>{pageFlip.flip(pdfToInternal(n),"top");els.thumbDrawer.hidden=true};els.thumbGrid.append(b)}}
@@ -53,4 +57,5 @@ async function share(){const data={title:els.publicationTitle.textContent,text:`
 
 [els.openButton,els.welcomeOpen].forEach(b=>b.addEventListener("click",choose));els.fileInput.addEventListener("change",e=>openFile(e.target.files[0]));[els.nextPage,els.dockNext].forEach(b=>b.addEventListener("click",flipNext));[els.previousPage,els.dockPrevious].forEach(b=>b.addEventListener("click",flipPrev));els.firstPage.onclick=()=>pageFlip?.flip(0,"top");els.lastPage.onclick=()=>pageFlip?.flip(pdfToInternal(pdfDoc.numPages),"top");els.pageInput.onchange=()=>pageFlip?.flip(pdfToInternal(Math.max(1,Math.min(pdfDoc.numPages,Number(els.pageInput.value)))),"top");els.zoomIn.onclick=()=>{zoom=Math.min(1.22,zoom+.08);fitBook()};els.zoomOut.onclick=()=>{zoom=Math.max(.72,zoom-.08);fitBook()};els.thumbButton.onclick=()=>els.thumbDrawer.hidden=!els.thumbDrawer.hidden;els.closeThumbs.onclick=()=>els.thumbDrawer.hidden=true;els.fullscreenButton.onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();els.shareButton.onclick=share;
 document.addEventListener("keydown",e=>{if(e.key==="ArrowRight"||e.key==="PageDown")flipNext();if(e.key==="ArrowLeft"||e.key==="PageUp")flipPrev();if(e.key==="Escape")els.thumbDrawer.hidden=true});els.dropZone.addEventListener("dragover",e=>{e.preventDefault();els.viewerShell.classList.add("dragging")});els.dropZone.addEventListener("dragleave",()=>els.viewerShell.classList.remove("dragging"));els.dropZone.addEventListener("drop",e=>{e.preventDefault();els.viewerShell.classList.remove("dragging");openFile(e.dataTransfer.files[0])});
+addEventListener("resize",syncViewportMode);addEventListener("orientationchange",()=>setTimeout(syncViewportMode,120));syncViewportMode();
 const params=new URLSearchParams(location.search),defaultPdf=params.get("pdf")||config.defaultPdf;if(defaultPdf){loadPdf({url:defaultPdf},params.get("title")||defaultPdf.split("/").pop()||config.title,defaultPdf)}else{loading(false);els.welcome.hidden=false;els.controlDock.hidden=true}
