@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const els=Object.fromEntries(["viewerShell","publicationTitle","pageStatus","openButton","shareButton","fullscreenButton","dropZone","bookMount","flipbook","welcome","welcomeOpen","loading","loadingText","loadingProgress","dropMessage","controlDock","thumbButton","firstPage","previousPage","dockPrevious","pageInput","pageTotal","dockNext","nextPage","lastPage","zoomOut","zoomIn","downloadButton","thumbDrawer","closeThumbs","thumbGrid","fileInput"].map(id=>[id,$(id)]));
 const pdfjsUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
 const workerUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
-let pdfDoc=null,pageFlip=null,currentUrl="",objectUrl="",zoom=1,hasBackPadding=false;
+let pdfDoc=null,pageFlip=null,currentUrl="",objectUrl="",zoom=1,hasBackPadding=false,pageImageUrls=[];
 
 document.documentElement.style.setProperty("--accent",config.accent||"#28b6d8");
 els.publicationTitle.textContent=config.title||"My Publication";document.title=config.title||"My Publication";
@@ -11,11 +11,18 @@ function loading(show,text="Opening publication…",progress="Please wait"){els.
 function error(message){loading(false);els.pageStatus.textContent=message;alert(message)}
 async function pdfjs(){const lib=await import(pdfjsUrl);lib.GlobalWorkerOptions.workerSrc=workerUrl;return lib}
 async function renderCanvas(pageNumber,targetWidth=900){const page=await pdfDoc.getPage(pageNumber),base=page.getViewport({scale:1}),scale=targetWidth/base.width,viewport=page.getViewport({scale});const canvas=document.createElement("canvas");canvas.width=Math.round(viewport.width);canvas.height=Math.round(viewport.height);await page.render({canvasContext:canvas.getContext("2d",{alpha:false}),viewport}).promise;return canvas}
+async function renderPageImage(pageNumber){
+  const canvas=await renderCanvas(pageNumber);
+  const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Could not prepare this page.")),"image/jpeg",.94));
+  const image=document.createElement("img"),url=URL.createObjectURL(blob);pageImageUrls.push(url);image.src=url;image.alt=`Page ${pageNumber}`;image.draggable=false;
+  if(image.decode)await image.decode();else await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject});
+  return image;
+}
 
 async function loadPdf(source,name="Publication",url=""){
   loading(true,"Opening publication…","Reading PDF");
   try{
-    if(pageFlip){pageFlip.destroy();pageFlip=null}els.flipbook.textContent="";els.thumbGrid.textContent="";
+    if(pageFlip){pageFlip.destroy();pageFlip=null}pageImageUrls.forEach(URL.revokeObjectURL);pageImageUrls=[];els.flipbook.textContent="";els.thumbGrid.textContent="";
     const lib=await pdfjs();pdfDoc=await lib.getDocument(source).promise;currentUrl=url;
     els.publicationTitle.textContent=name.replace(/\.pdf$/i,"");document.title=els.publicationTitle.textContent;els.welcome.hidden=true;els.controlDock.hidden=false;els.downloadButton.hidden=config.allowDownload===false||!url;
     if(url){els.downloadButton.href=url;els.downloadButton.download=name}
@@ -24,10 +31,10 @@ async function loadPdf(source,name="Publication",url=""){
       loading(true,"Building flipbook…",`Rendering page ${n} of ${pdfDoc.numPages}`);
       if(hasBackPadding&&n===pdfDoc.numPages){const inside=document.createElement("div");inside.className="page inside-cover";inside.dataset.density="soft";els.flipbook.append(inside);pages.push(inside)}
       const page=document.createElement("div");page.className=`page${n===1||n===pdfDoc.numPages?" page-cover":""}`;page.dataset.density="soft";
-      page.append(await renderCanvas(n));const label=document.createElement("span");label.className="page-number";label.textContent=n;page.append(label);els.flipbook.append(page);pages.push(page);
+      page.append(await renderPageImage(n));const label=document.createElement("span");label.className="page-number";label.textContent=n;page.append(label);els.flipbook.append(page);pages.push(page);
     }
     if(!window.St?.PageFlip)throw new Error("The page-turn engine did not load. Refresh and try again.");
-    pageFlip=new window.St.PageFlip(els.flipbook,{width:695,height:900,size:"stretch",minWidth:280,maxWidth:1000,minHeight:370,maxHeight:1450,showCover:true,usePortrait:true,mobileScrollSupport:false,autoSize:true,drawShadow:true,maxShadowOpacity:.62,flippingTime:950,clickEventForward:true,swipeDistance:24,showPageCorners:true,disableFlipByClick:false});
+    pageFlip=new window.St.PageFlip(els.flipbook,{width:695,height:900,size:"stretch",minWidth:140,maxWidth:1000,minHeight:180,maxHeight:1450,showCover:true,usePortrait:true,mobileScrollSupport:false,autoSize:true,drawShadow:true,maxShadowOpacity:.62,flippingTime:950,clickEventForward:true,swipeDistance:24,showPageCorners:true,disableFlipByClick:false});
     pageFlip.loadFromHTML(pages);pageFlip.on("flip",e=>update(internalToPdf(e.data)));pageFlip.on("changeOrientation",()=>setTimeout(()=>centerBook(Number(els.pageInput.value)||1),80));update(1);buildThumbs();fitBook();setTimeout(()=>centerBook(1),120);loading(false);
   }catch(e){error(e.message||"This PDF could not be opened.")}
 }
@@ -35,7 +42,7 @@ async function loadPdf(source,name="Publication",url=""){
 function update(page){if(!pdfDoc)return;els.pageInput.value=page;els.pageTotal.textContent=`/ ${pdfDoc.numPages}`;els.pageStatus.textContent=`Page ${page} of ${pdfDoc.numPages}`;[els.previousPage,els.dockPrevious,els.firstPage].forEach(b=>b.disabled=page<=1);[els.nextPage,els.dockNext,els.lastPage].forEach(b=>b.disabled=page>=pdfDoc.numPages);document.querySelectorAll(".thumb").forEach(t=>t.classList.toggle("active",Number(t.dataset.page)===page));setTimeout(()=>centerBook(page),40)}
 function pdfToInternal(page){return hasBackPadding&&page===pdfDoc.numPages?page:page-1}
 function internalToPdf(index){if(hasBackPadding&&index===pdfDoc.numPages-1)return pdfDoc.numPages-1;if(hasBackPadding&&index>=pdfDoc.numPages)return pdfDoc.numPages;return Math.min(index+1,pdfDoc.numPages)}
-function centerBook(page){const frame=els.flipbook.querySelector(".stf__parent");if(!frame||!pdfDoc)return;if(matchMedia("(max-width: 780px)").matches){els.flipbook.style.transform="translateX(0px)";return}const quarter=frame.offsetWidth/4;const offset=page===1?-quarter:page===pdfDoc.numPages?quarter:0;els.flipbook.style.transform=`translateX(${offset}px)`}
+function centerBook(page){const frame=els.flipbook.querySelector(".stf__parent");if(!frame||!pdfDoc)return;if(Math.min(innerWidth,innerHeight)<=780){els.flipbook.style.transform="translateX(0px)";return}const quarter=frame.offsetWidth/4;const offset=page===1?-quarter:page===pdfDoc.numPages?quarter:0;els.flipbook.style.transform=`translateX(${offset}px)`}
 function fitBook(){els.bookMount.style.setProperty("--zoom",zoom)}
 function flipNext(){pageFlip?.flipNext("top")}
 function flipPrev(){pageFlip?.flipPrev("top")}
