@@ -1,130 +1,45 @@
-const config = window.FLIPBOOK_CONFIG || {};
-const $ = (id) => document.getElementById(id);
-const els = Object.fromEntries(["app","publicationTitle","pageStatus","openButton","shareButton","fullscreenButton","welcome","welcomeOpen","viewer","dropZone","dropMessage","loading","loadingText","bookWrap","book","leftPaper","rightPaper","leftCanvas","rightCanvas","leftNumber","rightNumber","turnSheet","turnCanvas","toolbar","thumbPanel","thumbGrid","thumbButton","closeThumbs","zoomOut","zoomIn","zoomValue","firstPage","previousPage","pageInput","pageTotal","nextPage","lastPage","edgePrevious","edgeNext","printButton","downloadButton","fileInput"].map(id=>[id,$(id)]));
-
-let pdfDoc=null,currentPage=1,zoom=1,currentUrl="",objectUrl="",renderToken=0,isTurning=false,touchStartX=0;
+const config=window.FLIPBOOK_CONFIG||{};
+const $=id=>document.getElementById(id);
+const els=Object.fromEntries(["viewerShell","publicationTitle","pageStatus","openButton","shareButton","fullscreenButton","dropZone","bookMount","welcome","welcomeOpen","loading","loadingText","loadingProgress","dropMessage","controlDock","thumbButton","firstPage","previousPage","dockPrevious","pageInput","pageTotal","dockNext","nextPage","lastPage","zoomOut","zoomIn","downloadButton","thumbDrawer","closeThumbs","thumbGrid","fileInput"].map(id=>[id,$(id)]));
 const pdfjsUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
 const workerUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
-const isMobile=()=>matchMedia("(max-width: 760px)").matches;
-const spreadStart=(page)=>isMobile()?page:(page===1?1:(page%2===0?page:page-1));
+let pdfDoc=null,pageFlip=null,currentUrl="",objectUrl="",zoom=1;
 
 document.documentElement.style.setProperty("--accent",config.accent||"#28b6d8");
-document.documentElement.style.setProperty("--bg",config.background||"#151515");
-els.publicationTitle.textContent=config.title||"My Publication";
-document.title=config.title||"My Publication";
-
-async function getPdfJs(){
-  try{const lib=await import(pdfjsUrl);lib.GlobalWorkerOptions.workerSrc=workerUrl;return lib}
-  catch(error){throw new Error("The PDF viewer could not load. Check your internet connection, then refresh.")}
-}
-
-function setLoading(show,text="Loading publication…"){els.loading.hidden=!show;els.loadingText.textContent=text}
-function setError(message){setLoading(false);els.pageStatus.textContent=message;alert(message)}
-function setButtons(){
-  if(!pdfDoc)return;
-  const first=currentPage<=1,last=currentPage>=pdfDoc.numPages;
-  [els.firstPage,els.previousPage,els.edgePrevious].forEach(b=>b.disabled=first);
-  [els.lastPage,els.nextPage,els.edgeNext].forEach(b=>b.disabled=last);
-  els.pageInput.value=currentPage;els.pageTotal.textContent=`/ ${pdfDoc.numPages}`;
-  els.pageStatus.textContent=`Page ${currentPage} of ${pdfDoc.numPages}`;
-  els.zoomValue.textContent=`${Math.round(zoom*100)}%`;
-}
+els.publicationTitle.textContent=config.title||"My Publication";document.title=config.title||"My Publication";
+function loading(show,text="Opening publication…",progress="Please wait"){els.loading.hidden=!show;els.loadingText.textContent=text;els.loadingProgress.textContent=progress}
+function error(message){loading(false);els.pageStatus.textContent=message;alert(message)}
+async function pdfjs(){const lib=await import(pdfjsUrl);lib.GlobalWorkerOptions.workerSrc=workerUrl;return lib}
+async function renderCanvas(pageNumber,targetWidth=900){const page=await pdfDoc.getPage(pageNumber),base=page.getViewport({scale:1}),scale=targetWidth/base.width,viewport=page.getViewport({scale});const canvas=document.createElement("canvas");canvas.width=Math.round(viewport.width);canvas.height=Math.round(viewport.height);await page.render({canvasContext:canvas.getContext("2d",{alpha:false}),viewport}).promise;return canvas}
 
 async function loadPdf(source,name="Publication",url=""){
-  setLoading(true,"Opening PDF…");
+  loading(true,"Opening publication…","Reading PDF");
   try{
-    const pdfjs=await getPdfJs();
-    pdfDoc=await pdfjs.getDocument(source).promise;
-    currentPage=Math.min(Math.max(Number(config.startPage)||1,1),pdfDoc.numPages);
-    currentUrl=url;renderToken++;
-    els.publicationTitle.textContent=name.replace(/\.pdf$/i,"")||config.title||"Publication";
-    document.title=els.publicationTitle.textContent;
-    els.welcome.hidden=true;els.viewer.hidden=false;els.toolbar.hidden=false;
-    els.downloadButton.hidden=config.allowDownload===false||!url;
+    if(pageFlip){pageFlip.destroy();pageFlip=null}els.bookMount.textContent="";els.thumbGrid.textContent="";
+    const lib=await pdfjs();pdfDoc=await lib.getDocument(source).promise;currentUrl=url;
+    els.publicationTitle.textContent=name.replace(/\.pdf$/i,"");document.title=els.publicationTitle.textContent;els.welcome.hidden=true;els.controlDock.hidden=false;els.downloadButton.hidden=config.allowDownload===false||!url;
     if(url){els.downloadButton.href=url;els.downloadButton.download=name}
-    await renderSpread();
-    setLoading(false);
-    buildThumbnails();
-  }catch(error){setError(error.message||"This PDF could not be opened.")}
+    const pages=[];
+    for(let n=1;n<=pdfDoc.numPages;n++){
+      loading(true,"Building flipbook…",`Rendering page ${n} of ${pdfDoc.numPages}`);
+      const page=document.createElement("div");page.className=`page${n===1||n===pdfDoc.numPages?" page-cover":""}`;page.dataset.density=n===1||n===pdfDoc.numPages?"hard":"soft";
+      page.append(await renderCanvas(n));const label=document.createElement("span");label.className="page-number";label.textContent=n;page.append(label);els.bookMount.append(page);pages.push(page);
+    }
+    if(!window.St?.PageFlip)throw new Error("The page-turn engine did not load. Refresh and try again.");
+    pageFlip=new window.St.PageFlip(els.bookMount,{width:695,height:900,size:"stretch",minWidth:280,maxWidth:1000,minHeight:370,maxHeight:1450,showCover:true,usePortrait:true,mobileScrollSupport:false,autoSize:true,drawShadow:true,maxShadowOpacity:.62,flippingTime:950,clickEventForward:true,swipeDistance:24,showPageCorners:true,disableFlipByClick:false});
+    pageFlip.loadFromHTML(pages);pageFlip.on("flip",e=>update(e.data+1));update(1);buildThumbs();fitBook();loading(false);
+  }catch(e){error(e.message||"This PDF could not be opened.")}
 }
 
-async function renderPage(number,canvas,maxWidth=1500){
-  if(!number||number<1||number>pdfDoc.numPages)return false;
-  const page=await pdfDoc.getPage(number);const base=page.getViewport({scale:1});
-  const scale=Math.min(2,maxWidth/base.width);const viewport=page.getViewport({scale});
-  canvas.width=Math.floor(viewport.width);canvas.height=Math.floor(viewport.height);
-  await page.render({canvasContext:canvas.getContext("2d",{alpha:false}),viewport}).promise;
-  return true;
-}
+function update(page){if(!pdfDoc)return;els.pageInput.value=page;els.pageTotal.textContent=`/ ${pdfDoc.numPages}`;els.pageStatus.textContent=`Page ${page} of ${pdfDoc.numPages}`;[els.previousPage,els.dockPrevious,els.firstPage].forEach(b=>b.disabled=page<=1);[els.nextPage,els.dockNext,els.lastPage].forEach(b=>b.disabled=page>=pdfDoc.numPages);document.querySelectorAll(".thumb").forEach(t=>t.classList.toggle("active",Number(t.dataset.page)===page))}
+function fitBook(){els.bookMount.style.setProperty("--zoom",zoom)}
+function flipNext(){pageFlip?.flipNext("top")}
+function flipPrev(){pageFlip?.flipPrev("top")}
+async function buildThumbs(){for(let n=1;n<=pdfDoc.numPages;n++){const b=document.createElement("button");b.className="thumb";b.dataset.page=n;b.type="button";const c=await renderCanvas(n,170),s=document.createElement("span");s.textContent=n;b.append(c,s);b.onclick=()=>{pageFlip.flip(n-1,"top");els.thumbDrawer.hidden=true};els.thumbGrid.append(b)}}
+function choose(){els.fileInput.click()}
+function openFile(file){if(!file||(!file.type.includes("pdf")&&!file.name.toLowerCase().endsWith(".pdf")))return error("Please choose a PDF file.");if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(file);loadPdf({url:objectUrl},file.name,objectUrl)}
+async function share(){const data={title:els.publicationTitle.textContent,text:`View ${els.publicationTitle.textContent}`,url:location.href};if(navigator.share){try{await navigator.share(data)}catch{}}else{await navigator.clipboard.writeText(location.href);els.pageStatus.textContent="Link copied"}}
 
-async function renderSpread(){
-  if(!pdfDoc)return;const token=++renderToken;const start=spreadStart(currentPage);
-  setLoading(true,"Rendering pages…");
-  if(isMobile()){
-    els.leftPaper.hidden=true;els.rightPaper.hidden=false;
-    await renderPage(currentPage,els.rightCanvas);els.rightNumber.textContent=currentPage;
-  }else if(start===1){
-    els.leftPaper.hidden=true;els.rightPaper.hidden=false;
-    await renderPage(1,els.rightCanvas);els.rightNumber.textContent="1";
-  }else{
-    els.leftPaper.hidden=false;els.rightPaper.hidden=start+1>pdfDoc.numPages;
-    await Promise.all([renderPage(start,els.leftCanvas),renderPage(start+1,els.rightCanvas)]);
-    els.leftNumber.textContent=start;els.rightNumber.textContent=start+1<=pdfDoc.numPages?start+1:"";
-  }
-  if(token!==renderToken)return;currentPage=start===1?1:(isMobile()?currentPage:start);setButtons();setLoading(false);highlightThumb();
-}
-
-async function goTo(page,direction=0){
-  if(!pdfDoc||isTurning)return;page=Math.max(1,Math.min(pdfDoc.numPages,page));if(page===currentPage)return;
-  isTurning=true;const source=direction<0?els.leftCanvas:els.rightCanvas;
-  els.turnCanvas.width=source.width;els.turnCanvas.height=source.height;
-  els.turnCanvas.getContext("2d").drawImage(source,0,0);
-  const rect=source.getBoundingClientRect();els.turnSheet.style.width=`${rect.width}px`;els.turnSheet.style.height=`${rect.height}px`;
-  els.turnSheet.hidden=false;els.turnSheet.className=`turn-sheet ${direction<0?"turn-previous":"turn-next"}`;
-  setTimeout(async()=>{currentPage=page;await renderSpread();els.turnSheet.hidden=true;els.turnSheet.className="turn-sheet";isTurning=false},540);
-}
-function next(){goTo(currentPage+(isMobile()?1:(currentPage===1?1:2)),1)}
-function previous(){goTo(currentPage-(isMobile()?1:(currentPage<=2?1:2)),-1)}
-function setZoom(value){zoom=Math.max(.65,Math.min(1.65,value));els.bookWrap.style.setProperty("--book-zoom",zoom);setButtons()}
-
-async function buildThumbnails(){
-  els.thumbGrid.textContent="";
-  for(let n=1;n<=pdfDoc.numPages;n++){
-    const button=document.createElement("button");button.className="thumb";button.type="button";button.dataset.page=n;
-    const canvas=document.createElement("canvas"),label=document.createElement("span");label.textContent=n;button.append(canvas,label);els.thumbGrid.append(button);
-    button.addEventListener("click",()=>{goTo(n,n<currentPage?-1:1);els.thumbPanel.hidden=true});
-    window.requestIdleCallback?window.requestIdleCallback(()=>renderPage(n,canvas,180)):setTimeout(()=>renderPage(n,canvas,180),n*35);
-  }highlightThumb();
-}
-function highlightThumb(){document.querySelectorAll(".thumb").forEach(t=>t.classList.toggle("active",Number(t.dataset.page)===currentPage))}
-function chooseFile(){els.fileInput.click()}
-function openFile(file){
-  if(!file||(!file.type.includes("pdf")&&!file.name.toLowerCase().endsWith(".pdf")))return setError("Please choose a PDF file.");
-  if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(file);loadPdf({url:objectUrl},file.name,objectUrl)
-}
-async function share(){
-  const data={title:els.publicationTitle.textContent,text:`View ${els.publicationTitle.textContent}`,url:location.href};
-  if(navigator.share){try{await navigator.share(data)}catch{}}
-  else{await navigator.clipboard.writeText(location.href);els.pageStatus.textContent="Link copied to clipboard"}
-}
-
-[els.openButton,els.welcomeOpen].forEach(b=>b.addEventListener("click",chooseFile));
-els.fileInput.addEventListener("change",e=>openFile(e.target.files[0]));
-els.nextPage.addEventListener("click",next);els.edgeNext.addEventListener("click",next);
-els.previousPage.addEventListener("click",previous);els.edgePrevious.addEventListener("click",previous);
-els.firstPage.addEventListener("click",()=>goTo(1,-1));els.lastPage.addEventListener("click",()=>goTo(pdfDoc.numPages,1));
-els.pageInput.addEventListener("change",()=>goTo(Number(els.pageInput.value),Number(els.pageInput.value)<currentPage?-1:1));
-els.zoomIn.addEventListener("click",()=>setZoom(zoom+.1));els.zoomOut.addEventListener("click",()=>setZoom(zoom-.1));
-els.thumbButton.addEventListener("click",()=>els.thumbPanel.hidden=!els.thumbPanel.hidden);els.closeThumbs.addEventListener("click",()=>els.thumbPanel.hidden=true);
-els.fullscreenButton.addEventListener("click",()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen());
-els.shareButton.addEventListener("click",share);els.printButton.addEventListener("click",()=>currentUrl?open(currentUrl,"_blank"):alert("Download the PDF first, then print it from your PDF viewer."));
-document.addEventListener("keydown",e=>{if(e.key==="ArrowRight"||e.key==="PageDown")next();if(e.key==="ArrowLeft"||e.key==="PageUp")previous();if(e.key==="Escape")els.thumbPanel.hidden=true});
-els.dropZone.addEventListener("dragover",e=>{e.preventDefault();els.app.classList.add("dragging")});
-els.dropZone.addEventListener("dragleave",()=>els.app.classList.remove("dragging"));
-els.dropZone.addEventListener("drop",e=>{e.preventDefault();els.app.classList.remove("dragging");openFile(e.dataTransfer.files[0])});
-els.book.addEventListener("touchstart",e=>touchStartX=e.changedTouches[0].clientX,{passive:true});
-els.book.addEventListener("touchend",e=>{const d=e.changedTouches[0].clientX-touchStartX;if(Math.abs(d)>45)(d<0?next:previous)()},{passive:true});
-addEventListener("resize",()=>{if(pdfDoc)renderSpread()});
-
-const params=new URLSearchParams(location.search);const defaultPdf=params.get("pdf")||config.defaultPdf;
-if(defaultPdf){const title=params.get("title")||defaultPdf.split("/").pop()||config.title;loadPdf({url:defaultPdf},title,defaultPdf)}
+[els.openButton,els.welcomeOpen].forEach(b=>b.addEventListener("click",choose));els.fileInput.addEventListener("change",e=>openFile(e.target.files[0]));[els.nextPage,els.dockNext].forEach(b=>b.addEventListener("click",flipNext));[els.previousPage,els.dockPrevious].forEach(b=>b.addEventListener("click",flipPrev));els.firstPage.onclick=()=>pageFlip?.flip(0,"top");els.lastPage.onclick=()=>pageFlip?.flip(pdfDoc.numPages-1,"top");els.pageInput.onchange=()=>pageFlip?.flip(Math.max(0,Math.min(pdfDoc.numPages-1,Number(els.pageInput.value)-1)),"top");els.zoomIn.onclick=()=>{zoom=Math.min(1.22,zoom+.08);fitBook()};els.zoomOut.onclick=()=>{zoom=Math.max(.72,zoom-.08);fitBook()};els.thumbButton.onclick=()=>els.thumbDrawer.hidden=!els.thumbDrawer.hidden;els.closeThumbs.onclick=()=>els.thumbDrawer.hidden=true;els.fullscreenButton.onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();els.shareButton.onclick=share;
+document.addEventListener("keydown",e=>{if(e.key==="ArrowRight"||e.key==="PageDown")flipNext();if(e.key==="ArrowLeft"||e.key==="PageUp")flipPrev();if(e.key==="Escape")els.thumbDrawer.hidden=true});els.dropZone.addEventListener("dragover",e=>{e.preventDefault();els.viewerShell.classList.add("dragging")});els.dropZone.addEventListener("dragleave",()=>els.viewerShell.classList.remove("dragging"));els.dropZone.addEventListener("drop",e=>{e.preventDefault();els.viewerShell.classList.remove("dragging");openFile(e.dataTransfer.files[0])});
+const params=new URLSearchParams(location.search),defaultPdf=params.get("pdf")||config.defaultPdf;if(defaultPdf){loadPdf({url:defaultPdf},params.get("title")||defaultPdf.split("/").pop()||config.title,defaultPdf)}else{loading(false);els.welcome.hidden=false;els.controlDock.hidden=true}
