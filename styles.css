@@ -17,3 +17,10 @@
   background: rgba(0, 0, 0, 0.15);
   mix-blend-mode: normal;
 }
+
+/* Stronger book spine and center-page depth */
+.page::before{content:"";position:absolute;top:0;bottom:0;width:12%;z-index:3;pointer-events:none;opacity:.95}
+.stf__item.--left .page::before{right:0;background:linear-gradient(to left,rgba(0,0,0,.42) 0,rgba(0,0,0,.20) 18%,rgba(0,0,0,.08) 42%,transparent 100%)}
+.stf__item.--right .page::before{left:0;background:linear-gradient(to right,rgba(0,0,0,.42) 0,rgba(0,0,0,.20) 18%,rgba(0,0,0,.08) 42%,transparent 100%)}
+.stf__item.--left .page{box-shadow:inset -2px 0 4px rgba(0,0,0,.48)}
+.stf__item.--right .page{box-shadow:inset 2px 0 4px rgba(0,0,0,.48)}
