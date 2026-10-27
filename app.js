@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const els=Object.fromEntries(["viewerShell","publicationTitle","pageStatus","openButton","shareButton","fullscreenButton","dropZone","bookMount","flipbook","welcome","welcomeOpen","loading","loadingText","loadingProgress","dropMessage","controlDock","thumbButton","firstPage","previousPage","dockPrevious","pageInput","pageTotal","dockNext","nextPage","lastPage","zoomOut","zoomIn","downloadButton","thumbDrawer","closeThumbs","thumbGrid","fileInput"].map(id=>[id,$(id)]));
 const pdfjsUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
 const workerUrl="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
-let pdfDoc=null,pageFlip=null,currentUrl="",objectUrl="",zoom=1,hasBackPadding=false,pageImageUrls=[],panX=0,panY=0,pinch=null,lastTap=0,ignoreTapUntil=0;
+let pdfDoc=null,pageFlip=null,currentUrl="",objectUrl="",zoom=1,hasBackPadding=false,pageImageUrls=[],panX=0,panY=0,pinch=null,pinchSession=false,lastTap=0,ignoreTapUntil=0;
 
 function isTouchDevice(){return navigator.maxTouchPoints>0||matchMedia("(pointer: coarse)").matches||/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)}
 function isMobileLandscape(){return isTouchDevice()&&innerWidth>innerHeight}
@@ -39,6 +39,7 @@ async function loadPdf(source,name="Publication",url=""){
     }
     if(!window.St?.PageFlip)throw new Error("The page-turn engine did not load. Refresh and try again.");
     pageFlip=new window.St.PageFlip(els.flipbook,{width:695,height:900,size:"stretch",minWidth:140,maxWidth:1000,minHeight:180,maxHeight:1450,showCover:true,usePortrait:true,mobileScrollSupport:false,autoSize:true,drawShadow:true,maxShadowOpacity:.62,flippingTime:950,clickEventForward:true,swipeDistance:24,showPageCorners:true,disableFlipByClick:false});
+    const nativeStartUserTouch=pageFlip.startUserTouch.bind(pageFlip);pageFlip.startUserTouch=point=>{if(!pinchSession&&Date.now()>=ignoreTapUntil)nativeStartUserTouch(point)};
     pageFlip.loadFromHTML(pages);pageFlip.on("flip",e=>update(internalToPdf(e.data)));pageFlip.on("changeOrientation",()=>setTimeout(()=>centerBook(Number(els.pageInput.value)||1),80));update(1);buildThumbs();fitBook();setTimeout(()=>centerBook(1),120);loading(false);
   }catch(e){error(e.message||"This PDF could not be opened.")}
 }
@@ -51,9 +52,10 @@ function fitBook(){const base=isMobileLandscape()?.78:1;els.bookMount.style.setP
 function touchDistance(a,b){return Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY)}
 function touchMidpoint(a,b){return{x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2}}
 function resetMobileZoom(){zoom=1;panX=0;panY=0;fitBook();els.pageStatus.textContent=pdfDoc?`Page ${els.pageInput.value} of ${pdfDoc.numPages}`:"Zoom reset"}
-function beginPinch(e){if(e.touches.length!==2)return;const a=e.touches[0],b=e.touches[1],mid=touchMidpoint(a,b);pinch={distance:touchDistance(a,b),zoom,midX:mid.x,midY:mid.y,panX,panY};els.viewerShell.classList.add("pinching");e.preventDefault();e.stopPropagation()}
+function cancelPagePeel(){if(!pageFlip)return;pageFlip.isUserTouch=false;pageFlip.isUserMove=false;const controller=pageFlip.getFlipController?.(),render=pageFlip.getRender?.();if(!controller||controller.getState()==="read")return;render?.finishAnimation();render?.setBottomPage(null);render?.setFlippingPage(null);render?.clearShadow();controller.setState("read");controller.reset();pageFlip.getPageCollection()?.show(pageFlip.getCurrentPageIndex())}
+function beginPinch(e){if(e.touches.length!==2)return;pinchSession=true;cancelPagePeel();const a=e.touches[0],b=e.touches[1],mid=touchMidpoint(a,b);pinch={distance:touchDistance(a,b),zoom,midX:mid.x,midY:mid.y,panX,panY};els.viewerShell.classList.add("pinching");e.preventDefault();e.stopPropagation()}
 function movePinch(e){if(!pinch||e.touches.length!==2)return;const a=e.touches[0],b=e.touches[1],mid=touchMidpoint(a,b);zoom=Math.max(.72,Math.min(2.8,pinch.zoom*(touchDistance(a,b)/pinch.distance)));panX=pinch.panX+(mid.x-pinch.midX);panY=pinch.panY+(mid.y-pinch.midY);fitBook();e.preventDefault();e.stopPropagation()}
-function endTouch(e){if(pinch&&e.touches.length<2){pinch=null;ignoreTapUntil=Date.now()+450;els.viewerShell.classList.remove("pinching");return}if(e.touches.length||Date.now()<ignoreTapUntil)return;const now=Date.now();if(now-lastTap<320){resetMobileZoom();lastTap=0;e.preventDefault()}else lastTap=now}
+function endTouch(e){if(pinchSession){e.preventDefault();e.stopPropagation();if(pinch&&e.touches.length<2){pinch=null;els.viewerShell.classList.remove("pinching")}if(e.touches.length===0){ignoreTapUntil=Date.now()+450;setTimeout(()=>{pinchSession=false},80)}return}if(e.touches.length||Date.now()<ignoreTapUntil)return;const now=Date.now();if(now-lastTap<320){resetMobileZoom();lastTap=0;e.preventDefault()}else lastTap=now}
 function flipNext(){pageFlip?.flipNext("top")}
 function flipPrev(){pageFlip?.flipPrev("top")}
 async function buildThumbs(){for(let n=1;n<=pdfDoc.numPages;n++){const b=document.createElement("button");b.className="thumb";b.dataset.page=n;b.type="button";const c=await renderCanvas(n,170),s=document.createElement("span");s.textContent=n;b.append(c,s);b.onclick=()=>{pageFlip.flip(pdfToInternal(n),"top");els.thumbDrawer.hidden=true};els.thumbGrid.append(b)}}
