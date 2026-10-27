@@ -18,6 +18,14 @@
 .stf__item.--left .page{box-shadow:inset -2px 0 4px rgba(0,0,0,.48)}
 .stf__item.--right .page{box-shadow:inset 2px 0 4px rgba(0,0,0,.48)}
 
+/* Closed-book thickness: page block, cover lip and a deeper table shadow */
+.book-closed-front .stf__parent,.book-closed-back .stf__parent{overflow:visible!important;isolation:isolate}
+.book-closed-front .stf__parent::before,.book-closed-back .stf__parent::before{content:"";position:absolute;top:5px;bottom:-10px;width:50%;z-index:-2;border-radius:2px 3px 5px 3px;background:repeating-linear-gradient(to bottom,#f7f2e8 0 2px,#d8d0c2 2px 3px,#eee8dc 3px 5px);border-right:5px solid #c8bfb0;border-bottom:7px solid #bdb4a5;box-shadow:10px 17px 17px rgba(0,0,0,.58),22px 28px 30px rgba(0,0,0,.38)}
+.book-closed-front .stf__parent::after,.book-closed-back .stf__parent::after{content:"";position:absolute;top:2px;bottom:-3px;width:50%;z-index:-1;border-radius:3px;background:linear-gradient(90deg,rgba(0,0,0,.18),transparent 5%,transparent 94%,rgba(0,0,0,.26));box-shadow:inset 0 -4px 0 rgba(45,30,20,.24)}
+.book-closed-front .stf__parent::before,.book-closed-front .stf__parent::after{left:50%;transform:translate(5px,5px)}
+.book-closed-back .stf__parent::before,.book-closed-back .stf__parent::after{left:0;transform:translate(-5px,5px)}
+.book-closed-front .page-cover,.book-closed-back .page-cover{box-shadow:4px 6px 7px rgba(0,0,0,.34),inset 0 0 0 1px rgba(255,255,255,.14)}
+
 .wood {
   background: url("Background.jpg") center center / cover no-repeat !important;
   filter: none;
